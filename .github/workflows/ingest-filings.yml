@@ -31,6 +31,9 @@ concurrency:
   group: sec-filings-${{ github.workflow }}
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
