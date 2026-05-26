@@ -52,6 +52,7 @@ jobs:
       SIGNAL_SCRIBE_EXCHANGE: ${{ vars.SIGNAL_SCRIBE_EXCHANGE || 'Nasdaq' }}
       SIGNAL_SCRIBE_FORM_TYPES: ${{ vars.SIGNAL_SCRIBE_FORM_TYPES || '10-K,10-Q,8-K,S-1,S-3,DEF 14A,20-F,40-F,6-K' }}
       SIGNAL_SCRIBE_LIMIT_PER_COMPANY: ${{ vars.SIGNAL_SCRIBE_LIMIT_PER_COMPANY || '5' }}
+      SIGNAL_SCRIBE_LOOKBACK_DAYS: ${{ vars.SIGNAL_SCRIBE_LOOKBACK_DAYS || '7' }}
       SIGNAL_SCRIBE_COMPANY_LIMIT: ${{ vars.SIGNAL_SCRIBE_COMPANY_LIMIT || '' }}
       SIGNAL_SCRIBE_PROCESS_LIMIT: ${{ vars.SIGNAL_SCRIBE_PROCESS_LIMIT || '10' }}
       SIGNAL_SCRIBE_NIGHTLY_PROCESS_LIMIT: ${{ vars.SIGNAL_SCRIBE_NIGHTLY_PROCESS_LIMIT || '25' }}
@@ -175,6 +176,9 @@ jobs:
           )
           if [ -n "$SIGNAL_SCRIBE_COMPANY_LIMIT" ]; then
             args+=(--company-limit "$SIGNAL_SCRIBE_COMPANY_LIMIT")
+          fi
+          if [ -n "$SIGNAL_SCRIBE_LOOKBACK_DAYS" ]; then
+            args+=(--lookback-days "$SIGNAL_SCRIBE_LOOKBACK_DAYS")
           fi
           signal-scribe discover-filings "${args[@]}"
 

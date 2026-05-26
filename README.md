@@ -94,6 +94,9 @@ signal-scribe sync-universe sp500 --source csv --csv-path ./sp500.csv
 # Discover recent filings and enqueue only filings that are not already processed or queued.
 signal-scribe discover-filings nasdaq --form-types 10-K,10-Q,8-K,S-1,S-3,DEF\ 14A --limit-per-company 5
 
+# Production discovery can be bounded to recent filing dates to avoid an accidental historical backfill.
+signal-scribe discover-filings nasdaq --lookback-days 7
+
 # Process queued filings. This runs SEC fetch, financial fact extraction, OpenAI analysis,
 # section extraction, embeddings, and Supabase persistence.
 signal-scribe process-queued-filings --universe nasdaq --limit 10
@@ -132,6 +135,7 @@ SIGNAL_SCRIBE_UNIVERSE_SOURCE=sec-exchange
 SIGNAL_SCRIBE_EXCHANGE=Nasdaq
 SIGNAL_SCRIBE_FORM_TYPES=10-K,10-Q,8-K,S-1,S-3,DEF 14A,20-F,40-F,6-K
 SIGNAL_SCRIBE_LIMIT_PER_COMPANY=5
+SIGNAL_SCRIBE_LOOKBACK_DAYS=7
 SIGNAL_SCRIBE_COMPANY_LIMIT=
 SIGNAL_SCRIBE_PROCESS_LIMIT=10
 SIGNAL_SCRIBE_NIGHTLY_PROCESS_LIMIT=25

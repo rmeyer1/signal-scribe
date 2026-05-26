@@ -1,5 +1,5 @@
 import csv
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -94,12 +94,13 @@ class IngestionService:
         form_types: list[str],
         limit_per_company: int = 5,
         company_limit: int | None = None,
+        filed_after: date | None = None,
     ) -> dict[str, Any]:
         universe = self._get_universe(universe_name)
         run_id = self._create_ingestion_run(universe["id"])
         companies = self._active_universe_companies(universe["id"], limit=company_limit)
         sec = SecClient(self._settings)
-        discovered = queued = skipped = failed = 0
+        found = discovered = queued = skipped = outside_window = failed = 0
 
         try:
             for company in companies:
@@ -110,6 +111,12 @@ class IngestionService:
                         limit=limit_per_company,
                     )
                     for metadata in filings:
+                        found += 1
+                        if filed_after and (
+                            metadata.filing_date is None or metadata.filing_date < filed_after
+                        ):
+                            outside_window += 1
+                            continue
                         discovered += 1
                         if self._filing_or_completed_job_exists(metadata.accession_number):
                             skipped += 1
@@ -135,9 +142,11 @@ class IngestionService:
             "run_id": run_id,
             "universe": universe_name,
             "companies_checked": len(companies),
+            "found": found,
             "discovered": discovered,
             "queued": queued,
             "skipped": skipped,
+            "outside_window": outside_window,
             "failed": failed,
         }
 

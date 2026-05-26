@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 
 import typer
 
@@ -72,16 +73,26 @@ def discover_filings(
     form_types: str = ",".join(DEFAULT_FORM_TYPES),
     limit_per_company: int = 5,
     company_limit: int | None = None,
+    lookback_days: int | None = typer.Option(
+        None,
+        help="Only enqueue filings filed in the last N days.",
+    ),
 ) -> None:
     """Discover new SEC filings for a universe and enqueue unprocessed filings."""
     settings = get_settings()
     service = IngestionService(settings, _require_supabase_store())
+    filed_after = None
+    if lookback_days is not None:
+        if lookback_days < 1:
+            raise typer.BadParameter("--lookback-days must be 1 or greater")
+        filed_after = datetime.now(UTC).date() - timedelta(days=lookback_days)
     result = asyncio.run(
         service.discover_filings(
             universe_name=universe,
             form_types=[item.strip() for item in form_types.split(",") if item.strip()],
             limit_per_company=limit_per_company,
             company_limit=company_limit,
+            filed_after=filed_after,
         )
     )
     typer.echo(json.dumps(result, indent=2))
