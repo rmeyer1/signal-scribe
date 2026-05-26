@@ -85,6 +85,9 @@ Universe and queue workflow:
 # Create or refresh a universe from SEC ticker/exchange mappings.
 signal-scribe sync-universe nasdaq --source sec-exchange --exchange Nasdaq
 
+# Create the universe only when it is missing; existing universes are left untouched.
+signal-scribe sync-universe nasdaq --source sec-exchange --exchange Nasdaq --only-if-missing
+
 # For licensed/custom index membership, use a CSV with ticker/symbol and optional cik/name/exchange columns.
 signal-scribe sync-universe sp500 --source csv --csv-path ./sp500.csv
 
@@ -110,6 +113,7 @@ These commands are intended to be called by whatever scheduler you choose later.
 ```
 
 GitHub cron is UTC-only, so the workflow schedules both EST and EDT UTC equivalents and gates execution using `America/New_York` local time. The 9 PM run also refreshes universe membership before discovery.
+Intraday runs first ensure the configured SEC exchange universe exists, so they can bootstrap a newly configured universe instead of failing discovery.
 
 Required repository secrets:
 
@@ -128,6 +132,7 @@ SIGNAL_SCRIBE_UNIVERSE_SOURCE=sec-exchange
 SIGNAL_SCRIBE_EXCHANGE=Nasdaq
 SIGNAL_SCRIBE_FORM_TYPES=10-K,10-Q,8-K,S-1,S-3,DEF 14A,20-F,40-F,6-K
 SIGNAL_SCRIBE_LIMIT_PER_COMPANY=5
+SIGNAL_SCRIBE_COMPANY_LIMIT=
 SIGNAL_SCRIBE_PROCESS_LIMIT=10
 SIGNAL_SCRIBE_NIGHTLY_PROCESS_LIMIT=25
 ```

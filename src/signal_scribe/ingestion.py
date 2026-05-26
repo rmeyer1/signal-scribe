@@ -176,6 +176,16 @@ class IngestionService:
 
         return {"claimed": len(jobs), "completed": completed, "failed": failed}
 
+    def universe_exists(self, universe_name: str) -> bool:
+        result = (
+            self._client.table("universes")
+            .select("id")
+            .eq("name", universe_name)
+            .limit(1)
+            .execute()
+        )
+        return bool(result.data)
+
     def _sync_universe(
         self,
         name: str,

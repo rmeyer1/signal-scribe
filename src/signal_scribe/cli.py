@@ -41,11 +41,20 @@ def sync_universe(
     exchange: str = typer.Option("Nasdaq", help="Exchange for sec-exchange source, or ALL."),
     csv_path: str | None = typer.Option(None, help="CSV with ticker/symbol and optional cik/name."),
     limit: int | None = typer.Option(None, help="Limit companies for test universes."),
+    only_if_missing: bool = typer.Option(
+        False,
+        "--only-if-missing",
+        help="Skip refresh when the universe already exists.",
+    ),
 ) -> None:
     """Create or refresh a universe of companies."""
     settings = get_settings()
     store = _require_supabase_store()
     service = IngestionService(settings, store)
+    if only_if_missing and service.universe_exists(name):
+        typer.echo(json.dumps({"name": name, "status": "exists"}, indent=2))
+        return
+
     if source == "sec-exchange":
         result = asyncio.run(service.sync_universe_from_sec_exchange(name, exchange, limit=limit))
     elif source == "csv":

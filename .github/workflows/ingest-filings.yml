@@ -135,6 +135,21 @@ jobs:
           done
           exit "$missing"
 
+      - name: Ensure universe exists
+        if: steps.gate.outputs.run == 'true' && steps.gate.outputs.mode != 'nightly'
+        shell: bash
+        run: |
+          args=(
+            "$SIGNAL_SCRIBE_UNIVERSE"
+            --source "$SIGNAL_SCRIBE_UNIVERSE_SOURCE"
+            --exchange "$SIGNAL_SCRIBE_EXCHANGE"
+            --only-if-missing
+          )
+          if [ -n "$SIGNAL_SCRIBE_COMPANY_LIMIT" ]; then
+            args+=(--limit "$SIGNAL_SCRIBE_COMPANY_LIMIT")
+          fi
+          signal-scribe sync-universe "${args[@]}"
+
       - name: Refresh universe membership
         if: steps.gate.outputs.run == 'true' && steps.gate.outputs.mode == 'nightly'
         shell: bash
