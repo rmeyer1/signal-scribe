@@ -220,13 +220,7 @@ class IngestionService:
         universe_id = universe["id"]
         active_ciks = {company["cik"] for company in companies}
 
-        existing = (
-            self._client.table("universe_companies")
-            .select("id,cik")
-            .eq("universe_id", universe_id)
-            .execute()
-            .data
-        )
+        existing = self._select_all_universe_companies(universe_id, columns="id,cik")
         for row in existing:
             if row["cik"] not in active_ciks:
                 self._client.table("universe_companies").update(
@@ -260,16 +254,51 @@ class IngestionService:
         return result.data[0]
 
     def _active_universe_companies(self, universe_id: str, limit: int | None) -> list[dict[str, Any]]:
-        query = (
-            self._client.table("universe_companies")
-            .select("*")
-            .eq("universe_id", universe_id)
-            .eq("active", True)
-            .order("ticker")
-        )
-        if limit:
-            query = query.limit(limit)
-        return query.execute().data
+        rows = []
+        page_size = 1000
+        offset = 0
+        while limit is None or len(rows) < limit:
+            end = offset + page_size - 1
+            if limit is not None:
+                end = min(end, offset + (limit - len(rows)) - 1)
+            page = (
+                self._client.table("universe_companies")
+                .select("*")
+                .eq("universe_id", universe_id)
+                .eq("active", True)
+                .order("ticker")
+                .range(offset, end)
+                .execute()
+                .data
+            )
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
+        return rows
+
+    def _select_all_universe_companies(
+        self,
+        universe_id: str,
+        columns: str,
+    ) -> list[dict[str, Any]]:
+        rows = []
+        page_size = 1000
+        offset = 0
+        while True:
+            page = (
+                self._client.table("universe_companies")
+                .select(columns)
+                .eq("universe_id", universe_id)
+                .range(offset, offset + page_size - 1)
+                .execute()
+                .data
+            )
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
+        return rows
 
     def _create_ingestion_run(self, universe_id: str) -> str:
         result = self._client.table("ingestion_runs").insert({"universe_id": universe_id}).execute()
