@@ -202,6 +202,7 @@ class IngestionService:
         source_config: dict[str, Any],
         companies: list[dict[str, str]],
     ) -> dict[str, Any]:
+        companies = _dedupe_companies_by_cik(companies)
         universe_result = (
             self._client.table("universes")
             .upsert(
@@ -396,3 +397,12 @@ class IngestionService:
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _dedupe_companies_by_cik(companies: list[dict[str, str]]) -> list[dict[str, str]]:
+    deduped: dict[str, dict[str, str]] = {}
+    for company in companies:
+        cik = company["cik"]
+        if cik not in deduped:
+            deduped[cik] = company
+    return list(deduped.values())

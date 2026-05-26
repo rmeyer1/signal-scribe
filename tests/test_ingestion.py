@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from signal_scribe.config import Settings
-from signal_scribe.ingestion import IngestionService
+from signal_scribe.ingestion import IngestionService, _dedupe_companies_by_cik
 
 
 class _FakeClient:
@@ -52,3 +52,13 @@ def test_universe_exists_returns_false_for_missing_universe():
     service = _service_with_universes({"nasdaq-test"})
 
     assert service.universe_exists("nasdaq") is False
+
+
+def test_dedupe_companies_by_cik_keeps_first_security_for_same_filer():
+    companies = [
+        {"ticker": "GOOG", "cik": "0001652044", "company_name": "Alphabet", "exchange": "Nasdaq"},
+        {"ticker": "GOOGL", "cik": "0001652044", "company_name": "Alphabet", "exchange": "Nasdaq"},
+        {"ticker": "MSFT", "cik": "0000789019", "company_name": "Microsoft", "exchange": "Nasdaq"},
+    ]
+
+    assert _dedupe_companies_by_cik(companies) == [companies[0], companies[2]]
