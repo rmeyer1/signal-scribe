@@ -1,0 +1,173 @@
+name: Ingest SEC filings
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: true
+        default: "intraday"
+        type: choice
+        options:
+          - intraday
+          - nightly
+      universe:
+        description: "Universe name"
+        required: false
+        default: ""
+  schedule:
+    # GitHub schedules are UTC. These cover both EST and EDT equivalents.
+    # The first step gates by America/New_York local time to avoid duplicate runs.
+    - cron: "0 14 * * *"   # 10:00 Eastern during daylight time
+    - cron: "0 15 * * *"   # 10:00 Eastern during standard time
+    - cron: "0 17 * * *"   # 13:00 Eastern during daylight time
+    - cron: "0 18 * * *"   # 13:00 Eastern during standard time
+    - cron: "30 20 * * *"  # 16:30 Eastern during daylight time
+    - cron: "30 21 * * *"  # 16:30 Eastern during standard time
+    - cron: "0 1 * * *"    # 21:00 Eastern during daylight time
+    - cron: "0 2 * * *"    # 21:00 Eastern during standard time
+
+concurrency:
+  group: sec-filings-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
+      OPENAI_EMBEDDING_MODEL: ${{ vars.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small' }}
+      EMBEDDING_DIMENSIONS: ${{ vars.EMBEDDING_DIMENSIONS || '1536' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SIGNAL_SCRIBE_UNIVERSE: ${{ github.event.inputs.universe || vars.SIGNAL_SCRIBE_UNIVERSE || 'nasdaq' }}
+      SIGNAL_SCRIBE_UNIVERSE_SOURCE: ${{ vars.SIGNAL_SCRIBE_UNIVERSE_SOURCE || 'sec-exchange' }}
+      SIGNAL_SCRIBE_EXCHANGE: ${{ vars.SIGNAL_SCRIBE_EXCHANGE || 'Nasdaq' }}
+      SIGNAL_SCRIBE_FORM_TYPES: ${{ vars.SIGNAL_SCRIBE_FORM_TYPES || '10-K,10-Q,8-K,S-1,S-3,DEF 14A,20-F,40-F,6-K' }}
+      SIGNAL_SCRIBE_LIMIT_PER_COMPANY: ${{ vars.SIGNAL_SCRIBE_LIMIT_PER_COMPANY || '5' }}
+      SIGNAL_SCRIBE_COMPANY_LIMIT: ${{ vars.SIGNAL_SCRIBE_COMPANY_LIMIT || '' }}
+      SIGNAL_SCRIBE_PROCESS_LIMIT: ${{ vars.SIGNAL_SCRIBE_PROCESS_LIMIT || '10' }}
+      SIGNAL_SCRIBE_NIGHTLY_PROCESS_LIMIT: ${{ vars.SIGNAL_SCRIBE_NIGHTLY_PROCESS_LIMIT || '25' }}
+
+    steps:
+      - name: Decide whether this schedule should run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MODE: ${{ github.event.inputs.mode }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          event_name = os.environ["EVENT_NAME"]
+          input_mode = os.environ.get("INPUT_MODE") or ""
+
+          if event_name == "workflow_dispatch":
+              print("run=true")
+              print(f"mode={input_mode or 'intraday'}")
+              raise SystemExit
+
+          now = datetime.now(ZoneInfo("America/New_York"))
+          minute_of_day = now.hour * 60 + now.minute
+
+          intraday_windows = [
+              (10 * 60, 10 * 60 + 59),
+              (13 * 60, 13 * 60 + 59),
+              (16 * 60 + 30, 17 * 60 + 29),
+          ]
+          nightly_windows = [(21 * 60, 21 * 60 + 59)]
+
+          if any(start <= minute_of_day <= end for start, end in intraday_windows):
+              print("run=true")
+              print("mode=intraday")
+          elif any(start <= minute_of_day <= end for start, end in nightly_windows):
+              print("run=true")
+              print("mode=nightly")
+          else:
+              print("run=false")
+              print("mode=skip")
+          print(f"local_time={now.isoformat()}")
+          PY
+
+      - name: Show schedule decision
+        run: |
+          echo "run=${{ steps.gate.outputs.run }}"
+          echo "mode=${{ steps.gate.outputs.mode }}"
+          echo "local_time=${{ steps.gate.outputs.local_time }}"
+
+      - name: Check out repository
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Signal Scribe
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Validate required secrets
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          missing=0
+          for name in SEC_USER_AGENT OPENAI_API_KEY SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Refresh universe membership
+        if: steps.gate.outputs.run == 'true' && steps.gate.outputs.mode == 'nightly'
+        shell: bash
+        run: |
+          args=(
+            "$SIGNAL_SCRIBE_UNIVERSE"
+            --source "$SIGNAL_SCRIBE_UNIVERSE_SOURCE"
+            --exchange "$SIGNAL_SCRIBE_EXCHANGE"
+          )
+          if [ -n "$SIGNAL_SCRIBE_COMPANY_LIMIT" ]; then
+            args+=(--limit "$SIGNAL_SCRIBE_COMPANY_LIMIT")
+          fi
+          signal-scribe sync-universe "${args[@]}"
+
+      - name: Discover filings
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          args=(
+            "$SIGNAL_SCRIBE_UNIVERSE"
+            --form-types "$SIGNAL_SCRIBE_FORM_TYPES"
+            --limit-per-company "$SIGNAL_SCRIBE_LIMIT_PER_COMPANY"
+          )
+          if [ -n "$SIGNAL_SCRIBE_COMPANY_LIMIT" ]; then
+            args+=(--company-limit "$SIGNAL_SCRIBE_COMPANY_LIMIT")
+          fi
+          signal-scribe discover-filings "${args[@]}"
+
+      - name: Process queued filings
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          process_limit="$SIGNAL_SCRIBE_PROCESS_LIMIT"
+          if [ "${{ steps.gate.outputs.mode }}" = "nightly" ]; then
+            process_limit="$SIGNAL_SCRIBE_NIGHTLY_PROCESS_LIMIT"
+          fi
+          signal-scribe process-queued-filings \
+            --universe "$SIGNAL_SCRIBE_UNIVERSE" \
+            --limit "$process_limit"
