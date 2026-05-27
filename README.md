@@ -35,6 +35,7 @@ Edit `.env`:
 ```bash
 SEC_USER_AGENT="Signal Scribe your-email@example.com"
 OPENAI_API_KEY="sk-..."
+SIGNAL_SCRIBE_API_KEY="server-to-server-shared-secret"
 SUPABASE_URL="https://..."
 SUPABASE_SERVICE_ROLE_KEY="..."
 ```
@@ -51,10 +52,19 @@ Endpoints:
 
 ```text
 GET  /health
+GET  /v1/companies/{ticker}/profile
 GET  /companies/{ticker}/latest-filings?form_types=10-K,10-Q,8-K,S-1&limit=10
 POST /analyze
 GET  /search?q=liquidity
 POST /semantic-search
+```
+
+The `/v1/*` endpoints are the stable product API for downstream services. They require
+server-to-server bearer auth:
+
+```bash
+curl http://127.0.0.1:8000/v1/companies/AAPL/profile \
+  -H "Authorization: Bearer $SIGNAL_SCRIBE_API_KEY"
 ```
 
 Example:

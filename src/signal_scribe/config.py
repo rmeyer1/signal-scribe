@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.4-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
+    signal_scribe_api_key: str | None = None
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
     local_store_path: str = ".signal_scribe_store.jsonl"

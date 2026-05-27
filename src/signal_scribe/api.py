@@ -1,8 +1,14 @@
-from fastapi import Depends, FastAPI
+from hmac import compare_digest
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from signal_scribe.config import Settings, get_settings
 from signal_scribe.embeddings import EmbeddingService
 from signal_scribe.pipeline import SignalScribePipeline
+from signal_scribe.profile_contracts import V1CompanyProfileResponse, dump_v1_profile
+from signal_scribe.profile_service import CompanyProfileService
 from signal_scribe.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -13,6 +19,8 @@ from signal_scribe.schemas import (
 from signal_scribe.sec_client import SecClient
 from signal_scribe.storage import AnalysisStore, get_store
 
+bearer_auth = HTTPBearer(auto_error=False)
+
 app = FastAPI(
     title="Signal Scribe",
     version="0.1.0",
@@ -22,6 +30,32 @@ app = FastAPI(
 
 def store_dependency(settings: Settings = Depends(get_settings)) -> AnalysisStore:
     return get_store(settings)
+
+
+def profile_service_dependency(
+    store: AnalysisStore = Depends(store_dependency),
+) -> CompanyProfileService:
+    return CompanyProfileService(store)
+
+
+def require_v1_bearer_auth(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    if not settings.signal_scribe_api_key:
+        raise HTTPException(status_code=503, detail="SignalScribe API auth is not configured")
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not compare_digest(credentials.credentials, settings.signal_scribe_api_key):
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 @app.get("/health")
@@ -51,6 +85,23 @@ async def latest_filings(
         return {"ticker": ticker.upper(), "company_name": company_name, "cik": cik, "filings": filings}
     finally:
         await sec.close()
+
+
+@app.get("/v1/companies/{ticker}/profile", response_model=V1CompanyProfileResponse)
+async def company_profile(
+    ticker: str,
+    _: None = Depends(require_v1_bearer_auth),
+    service: CompanyProfileService = Depends(profile_service_dependency),
+):
+    try:
+        profile = await service.get_company_profile(ticker)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail="Unable to load company profile") from exc
+    if profile.status == "not_found":
+        return JSONResponse(status_code=404, content=dump_v1_profile(profile))
+    return profile
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
