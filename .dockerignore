@@ -1,0 +1,12 @@
+.git
+.venv
+.env
+.pytest_cache
+.ruff_cache
+__pycache__
+*.py[cod]
+.signal_scribe_store.jsonl
+dist
+build
+*.egg-info
+
