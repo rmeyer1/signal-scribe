@@ -1,0 +1,37 @@
+services:
+  signal-scribe-api:
+    build: .
+    container_name: signal-scribe-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - signal-scribe-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Enable this after authenticating cloudflared and creating a named tunnel.
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: signal-scribe-cloudflared
+  #   restart: unless-stopped
+  #   command: tunnel run signal-scribe
+  #   depends_on:
+  #     signal-scribe-api:
+  #       condition: service_healthy
+  #   volumes:
+  #     - ~/.cloudflared:/home/nonroot/.cloudflared:ro
+
+volumes:
+  signal-scribe-data:
+
